@@ -13,14 +13,17 @@
     "dev": "node bot.js",
     "register": "node bot.js --register",
     "test": "echo 'No tests configured'",
-    "heroku-postbuild": "npm install"
+    "heroku-postbuild": "npm install --ignore-scripts"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "better-sqlite3": "^9.4.3",
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "sqlite3": "^5.1.6"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^9.4.3"
   },
   "keywords": [
     "discord",
