@@ -1,67 +1,57 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
 
 echo.
-echo =====================================
-echo  AURORE BOT - DEPLOYMENT A GITHUB
-echo =====================================
+echo AURORE BOT - Deployment a GitHub
 echo.
 
 git --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Git NO esta instalado
+    echo ERROR: Git no esta instalado
     pause
     exit /b 1
 )
 
-echo [OK] Git instalado
+echo Git OK
 echo.
 
-set /p GitHubUser="Tu usuario GitHub (ejemplo: SzKingXz): "
+set /p USER="Tu usuario GitHub: "
 
-if "!GitHubUser!"=="" (
-    echo ERROR: Usuario vacio
+if "!USER!"=="" (
+    echo Necesitas ingresar un usuario
     pause
     exit /b 1
 )
 
-set /p GitHubEmail="Tu email GitHub (ejemplo: tu@email.com): "
+set /p EMAIL="Tu email GitHub: "
 
-if "!GitHubEmail!"=="" (
-    echo ERROR: Email vacio
+if "!EMAIL!"=="" (
+    echo Necesitas ingresar un email
     pause
     exit /b 1
 )
 
 echo.
-echo [OK] Configuracion:
-echo     Usuario: !GitHubUser!
-echo     Email: !GitHubEmail!
+echo Usuario: !USER!
+echo Email: !EMAIL!
 echo.
 
-set RepoUrl=https://github.com/!GitHubUser!/aurore-bot.git
+echo Configurando Git...
+git config user.name "!USER!"
+git config user.email "!EMAIL!"
 
-echo [1/5] Inicializando Git...
-git init
-if errorlevel 1 goto error
+echo Limpiando remotes...
+git remote remove origin >nul 2>&1
 
-echo [2/5] Configurando usuario...
-git config user.name "!GitHubUser!"
-git config user.email "!GitHubEmail!"
+echo Agregando URL...
+git remote add origin https://github.com/!USER!/aurore-bot.git
 
-echo [3/5] Agregando remote...
-git remote remove origin 2>nul
-git remote add origin !RepoUrl!
-
-echo [4/5] Agregando archivos...
+echo.
+echo Agregando archivos...
 git add .
 
-echo [5/5] Haciendo commit y push...
-git commit -m "Initial commit: AURORE Bot v4.0.0 - Modular Architecture"
-if errorlevel 1 (
-    echo [SKIP] Commit (ya existe o sin cambios)
-)
+echo Haciendo commit...
+git commit -m "Initial commit: AURORE Bot v4.0.0" >nul 2>&1
 
 echo.
 echo Haciendo push a GitHub...
@@ -73,22 +63,11 @@ git push -u origin main
 if errorlevel 1 (
     echo.
     echo ERROR en push
-    echo Posibles causas:
-    echo - Credenciales de GitHub incorrectas
-    echo - No tienes permiso en el repo
-    echo - Problema de conexion
     pause
     exit /b 1
 )
 
 echo.
-echo =====================================
-echo  EXITO!
-echo =====================================
-echo.
-echo Tu repositorio esta en:
-echo !RepoUrl!
-echo.
-echo Siguiente: Configura en render.com
+echo EXITO!
 echo.
 pause
