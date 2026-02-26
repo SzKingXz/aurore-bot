@@ -75,6 +75,19 @@ module.exports = {
     }
   },
 
+  getLeaderboard: (guildId, limit = 10) => {
+    try {
+      return db.prepare?.(`
+        SELECT * FROM levels 
+        WHERE guild_id = ?
+        ORDER BY level DESC, xp DESC
+        LIMIT ?
+      `)?.all(guildId, limit) || [];
+    } catch {
+      return [];
+    }
+  },
+
   canGainXP: (userId, guildId) => {
     try {
       const key = `${guildId}_${userId}`;
@@ -179,16 +192,19 @@ module.exports = {
     }
   },
 
-  createGiveaway: (guildId, channelId, messageId, prize, endsAt) => {
+  createGiveaway: (guildId, channelId, messageId, prize, endsAt, imagen = null) => {
     try {
       if (db.prepare) {
-        return db.prepare(`
-          INSERT INTO giveaways (guild_id, channel_id, message_id, prize, ends_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(guildId, channelId, messageId, prize, endsAt);
+        const result = db.prepare(`
+          INSERT INTO giveaways (guild_id, channel_id, message_id, prize, ends_at, imagen)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(guildId, channelId, messageId, prize, Math.floor(endsAt.getTime() / 1000), imagen);
+        return { id: result.lastInsertRowid || result.changes };
       }
-    } catch {
-      return;
+      return { id: Math.random() * 1000 };
+    } catch (err) {
+      console.error('Error en createGiveaway:', err);
+      return null;
     }
   },
 
