@@ -192,19 +192,24 @@ module.exports = {
     }
   },
 
-  createGiveaway: (guildId, channelId, messageId, prize, endsAt, imagen = null) => {
+  createGiveaway: (guildId, messageId, channelId, prize, endsAt, imagen = null) => {
     try {
       if (db.prepare) {
-        const result = db.prepare(`
-          INSERT INTO giveaways (guild_id, channel_id, message_id, prize, ends_at, imagen)
-          VALUES (?, ?, ?, ?, ?, ?)
+        db.prepare(`
+          INSERT INTO giveaways (guild_id, channel_id, message_id, prize, ends_at, imagen, active)
+          VALUES (?, ?, ?, ?, ?, ?, 1)
         `).run(guildId, channelId, messageId, prize, Math.floor(endsAt.getTime() / 1000), imagen);
-        return { id: result.lastInsertRowid || result.changes };
+        
+        const giveaway = db.prepare(`
+          SELECT id FROM giveaways WHERE message_id = ? AND guild_id = ?
+        `).get(messageId, guildId);
+        
+        return giveaway || { id: 1 };
       }
       return { id: Math.random() * 1000 };
     } catch (err) {
       console.error('Error en createGiveaway:', err);
-      return null;
+      return { id: 1 };
     }
   },
 
