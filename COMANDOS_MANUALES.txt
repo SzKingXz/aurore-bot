@@ -1,0 +1,157 @@
+╔════════════════════════════════════════════════════════════════════╗
+║         COMANDOS MANUALES — COPIA Y PEGA EN POWERSHELL            ║
+╚════════════════════════════════════════════════════════════════════╝
+
+Si el .bat no funciona, ejecuta esto manualmente en PowerShell:
+
+══════════════════════════════════════════════════════════════════════
+PASO 1: Abre PowerShell
+══════════════════════════════════════════════════════════════════════
+
+En Windows:
+  - Botón derecho en la carpeta Discord/
+  - "Abrir en Terminal" o "Abrir PowerShell aquí"
+  
+O:
+  - Windows + R
+  - Escribe: powershell
+  - Enter
+
+══════════════════════════════════════════════════════════════════════
+PASO 2: Navega a la carpeta del Discord bot
+══════════════════════════════════════════════════════════════════════
+
+Copia y pega en PowerShell:
+
+cd "C:\Users\Administrator\Documents\Aurore System\Discord"
+
+Presiona Enter.
+
+══════════════════════════════════════════════════════════════════════
+PASO 3: Verifica que Git está instalado
+══════════════════════════════════════════════════════════════════════
+
+git --version
+
+Debería mostrar algo como: git version 2.x.x
+
+Si dice "no reconocido", Git NO está instalado:
+  - Descarga desde: https://git-scm.com/download/win
+  - Instala (siguiente, siguiente...)
+  - Reinicia PowerShell
+
+══════════════════════════════════════════════════════════════════════
+PASO 4: Ejecuta estos comandos (UNO A UNO)
+══════════════════════════════════════════════════════════════════════
+
+1️⃣  Inicializar repositorio:
+
+git init
+
+Presiona Enter. Debe decir "Initialized empty Git repository..."
+
+
+2️⃣  Configurar Git con TUS datos:
+
+CAMBIA "Tu Nombre" y "tu-email@example.com" por los TUYOS:
+
+git config user.name "Tu Nombre"
+git config user.email "tu-email@example.com"
+
+Presiona Enter.
+
+
+3️⃣  Agregar remoto (cambiar "tu-usuario" por tu usuario de GitHub):
+
+git remote add origin https://github.com/tu-usuario/aurore-bot.git
+
+Presiona Enter.
+
+
+4️⃣  Cambiar a rama main:
+
+git branch -M main
+
+Presiona Enter.
+
+
+5️⃣  Agregar todos los archivos:
+
+git add .
+
+Presiona Enter.
+
+
+6️⃣  Crear commit:
+
+git commit -m "Initial commit: AURORE Bot v4.0.0 - Modular Architecture"
+
+Presiona Enter.
+
+
+7️⃣  Hacer push (ESTE PUEDE PEDIR AUTENTICACIÓN):
+
+git push -u origin main
+
+Presiona Enter.
+
+Si pide credenciales, ingresa tu usuario y contraseña de GitHub.
+
+══════════════════════════════════════════════════════════════════════
+✅ SI TODO FUNCIONA
+══════════════════════════════════════════════════════════════════════
+
+Verás algo como:
+
+Enumerating objects: 123, done.
+Counting objects: 100% (123/123), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (100/100), done.
+Writing objects: 100% (123/123), ...
+remote: Create a pull request for 'main' on GitHub by visiting:
+remote:    https://github.com/tu-usuario/aurore-bot/new/main
+
+🎉 ¡ÉXITO! Tu código está en GitHub.
+
+══════════════════════════════════════════════════════════════════════
+❌ SI HAY ERRORES
+══════════════════════════════════════════════════════════════════════
+
+Error: "fatal: not a git repository"
+  → Ejecutaste desde carpeta incorrecta
+  → Solución: cd "C:\Users\Administrator\Documents\Aurore System\Discord"
+
+Error: "fatal: remote origin already exists"
+  → La carpeta ya tiene un remoto
+  → Solución: git remote remove origin
+             git remote add origin https://...
+
+Error: "authentication failed" o "permission denied"
+  → Credenciales de GitHub incorrectas
+  → Solución: 
+    a) Verificar usuario/contraseña
+    b) Usar Token de GitHub en lugar de contraseña
+       (Settings → Developer Settings → Personal Access Tokens)
+
+Error: "git: command not found"
+  → Git NO está instalado
+  → Solución: Descargar de https://git-scm.com/download/win
+
+══════════════════════════════════════════════════════════════════════
+⚠️  IMPORTANTE
+══════════════════════════════════════════════════════════════════════
+
+- PRIMERO: Crear repositorio en GitHub
+  https://github.com/new
+  Nombre: aurore-bot
+  Público
+  Crear
+
+- LUEGO: Ejecutar estos comandos
+
+- NO ejecutes estos comandos DOS VECES en la misma carpeta
+  (Git lo detectará y dará errores)
+
+══════════════════════════════════════════════════════════════════════
+
+¿Necesitas ayuda? Dime qué error muestra.

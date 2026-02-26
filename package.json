@@ -1,0 +1,33 @@
+{
+  "name": "aurore-bot",
+  "version": "4.0.0",
+  "description": "AURORE Discord Bot - Modular Architecture with XP System, Moderation & More",
+  "main": "bot.js",
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js",
+    "register": "node bot.js --register",
+    "test": "echo 'No tests configured'",
+    "heroku-postbuild": "npm install"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "discord-bot",
+    "modular",
+    "xp-system",
+    "moderation"
+  ]
+}
