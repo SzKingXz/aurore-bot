@@ -65,4 +65,4 @@ Modular y escalable:
 
 ---
 
-Made with discord.js
+Made with SlayMega in discord.js

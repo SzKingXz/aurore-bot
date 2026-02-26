@@ -10,16 +10,21 @@ module.exports = {
       .setDescription('Tu pregunta')
       .setRequired(true)),
   async execute(interaction) {
-    const pregunta = interaction.options.getString('pregunta');
-    const respuesta = EIGHTBALL[Math.floor(Math.random() * EIGHTBALL.length)];
-    const embed = new EmbedBuilder()
-      .setColor(PALETTE.cyan)
-      .setTitle('✦ BOLA 8 MÁGICA')
-      .addFields(
-        { name: 'Pregunta', value: pregunta },
-        { name: 'Respuesta', value: respuesta }
-      )
-      .setFooter({ text: 'AURORE SYSTEM' });
-    interaction.reply({ embeds: [embed] });
+    try {
+      const pregunta = interaction.options.getString('pregunta');
+      const respuesta = EIGHTBALL[Math.floor(Math.random() * EIGHTBALL.length)];
+      
+      const embed = new EmbedBuilder()
+        .setColor(PALETTE.cyan)
+        .setTitle('BOLA 8 MAGICA')
+        .setDescription(`**Pregunta:** ${pregunta}\n\n**Respuesta:** ${respuesta}`)
+        .setFooter({ text: 'AURORE SYSTEM' })
+        .setTimestamp();
+      
+      await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+      console.error('Error en 8ball:', error);
+      await interaction.reply({ content: 'Error al procesar el comando', ephemeral: true });
+    }
   }
 };
