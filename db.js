@@ -6,6 +6,37 @@ try {
   db = new Database(path.join(__dirname, 'aurore.db'));
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS levels (
+      key TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      username TEXT DEFAULT 'Unknown',
+      xp INTEGER DEFAULT 0,
+      level INTEGER DEFAULT 0,
+      messages INTEGER DEFAULT 0,
+      last_message INTEGER DEFAULT 0
+    );
+    
+    CREATE TABLE IF NOT EXISTS guild_config (
+      guild_id TEXT PRIMARY KEY,
+      level_channel TEXT,
+      log_channel TEXT,
+      welcome_channel TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS mod_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      user_id TEXT,
+      moderator_id TEXT,
+      reason TEXT,
+      timestamp INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+  `);
+  
   console.log('✅ SQLite inicializado');
 } catch (err) {
   console.log('⚠️ better-sqlite3 no disponible, usando fallback en memoria');
@@ -110,11 +141,15 @@ module.exports = {
   setGuildConfig: (guildId, key, value) => {
     try {
       if (db.prepare) {
-        db.prepare(`
-          INSERT OR REPLACE INTO guild_config (guild_id, ${key})
-          VALUES (?, ?)
-        `).run(guildId, value);
-        console.log(`Config actualizado: Guild ${guildId}, ${key} = ${value}`);
+        const existing = db.prepare('SELECT * FROM guild_config WHERE guild_id = ?').get(guildId);
+        
+        if (existing) {
+          db.prepare(`UPDATE guild_config SET ${key} = ? WHERE guild_id = ?`).run(value, guildId);
+        } else {
+          db.prepare('INSERT INTO guild_config (guild_id) VALUES (?)').run(guildId);
+          db.prepare(`UPDATE guild_config SET ${key} = ? WHERE guild_id = ?`).run(value, guildId);
+        }
+        console.log(`✅ Config guardado: ${guildId} ${key}=${value}`);
       }
     } catch (err) {
       console.error('Error en setGuildConfig:', err);

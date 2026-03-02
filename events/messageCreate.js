@@ -37,11 +37,14 @@ module.exports = {
     const result = addXP(userId, guildId, xpGained, username);
     
     if (result.leveledUp) {
-      const userData = getUserData(userId, guildId);
-      const config = getGuildConfig(guildId);
+      const member = await message.guild.members.fetch(userId).catch(() => null);
+      let embedColor = PALETTE.gold;
+      if (member?.roles?.highest?.color) {
+        embedColor = member.roles.highest.color;
+      }
       const embed = new EmbedBuilder()
-        .setColor(PALETTE.gold)
-        .setTitle('✦ SUBISTE DE NIVEL')
+        .setColor(embedColor)
+        .setTitle('SUBISTE DE NIVEL')
         .setDescription(`${message.author} alcanzó el **Nivel ${result.newLevel}**`)
         .addFields(
           { name: 'Nivel', value: `${result.newLevel}`, inline: true },
@@ -53,7 +56,6 @@ module.exports = {
         .setTimestamp();
       const ch = config?.level_channel ? message.guild.channels.cache.get(config.level_channel) : message.channel;
       if (ch) ch.send({ embeds: [embed] }).catch(() => {});
-      const member = await message.guild.members.fetch(userId).catch(() => null);
       if (member) await assignLevelRole(member, message.guild, result.newLevel);
     }
   }
