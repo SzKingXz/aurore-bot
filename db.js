@@ -111,9 +111,10 @@ module.exports = {
     try {
       if (db.prepare) {
         db.prepare(`
-          INSERT OR IGNORE INTO guild_config (guild_id) VALUES (?)
-        `).run(guildId);
-        db.prepare(`UPDATE guild_config SET ${key} = ? WHERE guild_id = ?`).run(value, guildId);
+          INSERT OR REPLACE INTO guild_config (guild_id, ${key})
+          VALUES (?, ?)
+        `).run(guildId, value);
+        console.log(`Config actualizado: Guild ${guildId}, ${key} = ${value}`);
       }
     } catch (err) {
       console.error('Error en setGuildConfig:', err);
