@@ -1,8 +1,22 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { PALETTE, SPAM_CONFIG } = require('../utils/constants');
 const { checkSpam, formatNumber } = require('../utils/helpers');
-const { XP_CONFIG, addXP, canGainXP, getUserData, logMod, getGuildConfig } = require('../db');
+const { XP_CONFIG, addXP, canGainXP, getUserData, logMod } = require('../db');
 const { sendModLog, assignLevelRole } = require('../utils/modLog');
+const fs = require('fs');
+const path = require('path');
+
+const configFile = path.join(__dirname, '../guild_configs.json');
+
+function getGuildChannelConfig(guildId) {
+  try {
+    if (!fs.existsSync(configFile)) return null;
+    const configs = JSON.parse(fs.readFileSync(configFile, 'utf8') || '[]');
+    return configs.find(c => c.guildId === guildId) || null;
+  } catch {
+    return null;
+  }
+}
 
 module.exports = {
   name: Events.MessageCreate,
@@ -37,11 +51,16 @@ module.exports = {
     const result = addXP(userId, guildId, xpGained, username);
     
     if (result.leveledUp) {
+      const userData = getUserData(userId, guildId);
+      const config = getGuildChannelConfig(guildId);
+      
       const member = await message.guild.members.fetch(userId).catch(() => null);
       let embedColor = PALETTE.gold;
+      
       if (member?.roles?.highest?.color) {
         embedColor = member.roles.highest.color;
       }
+      
       const embed = new EmbedBuilder()
         .setColor(embedColor)
         .setTitle('SUBISTE DE NIVEL')
@@ -54,8 +73,13 @@ module.exports = {
         .setThumbnail(message.author.displayAvatarURL())
         .setFooter({ text: 'AURORE SYSTEM', iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
-      const ch = config?.level_channel ? message.guild.channels.cache.get(config.level_channel) : message.channel;
+      
+      const ch = config?.level_channel 
+        ? message.guild.channels.cache.get(config.level_channel) 
+        : message.channel;
+      
       if (ch) ch.send({ embeds: [embed] }).catch(() => {});
+      
       if (member) await assignLevelRole(member, message.guild, result.newLevel);
     }
   }
