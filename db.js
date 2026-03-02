@@ -215,9 +215,10 @@ module.exports = {
 
   getActiveGiveaways: () => {
     try {
+      const now = Math.floor(Date.now() / 1000);
       return db.prepare?.(`
         SELECT * FROM giveaways WHERE active = 1 AND ends_at <= ?
-      `)?.all(Date.now()) || [];
+      `)?.all(now) || [];
     } catch {
       return [];
     }
