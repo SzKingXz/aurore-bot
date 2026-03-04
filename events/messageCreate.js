@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const configFile = path.join(__dirname, '../guild_configs.json');
+const statsFile = path.join(__dirname, '../user_stats.json');
 
 function getGuildChannelConfig(guildId) {
   try {
@@ -15,6 +16,28 @@ function getGuildChannelConfig(guildId) {
     return configs.find(c => c.guildId === guildId) || null;
   } catch {
     return null;
+  }
+}
+
+function updateUserStats(guildId, userId, level, xp, messages) {
+  try {
+    let stats = [];
+    if (fs.existsSync(statsFile)) {
+      stats = JSON.parse(fs.readFileSync(statsFile, 'utf8') || '[]');
+    }
+
+    const userStat = stats.find(s => s.guildId === guildId && s.userId === userId);
+    if (userStat) {
+      userStat.level = level;
+      userStat.xp = xp;
+      userStat.messages = messages;
+    } else {
+      stats.push({ guildId, userId, level, xp, messages });
+    }
+
+    fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2));
+  } catch (error) {
+    console.error('Error actualizando stats:', error);
   }
 }
 
@@ -49,6 +72,9 @@ module.exports = {
     const { min, max } = XP_CONFIG.xpPerMessage;
     const xpGained = Math.floor(Math.random() * (max - min + 1)) + min;
     const result = addXP(userId, guildId, xpGained, username);
+    
+    const userData = getUserData(userId, guildId);
+    updateUserStats(guildId, userId, result.newLevel, userData.xp, userData.messages);
     
     if (result.leveledUp) {
       const userData = getUserData(userId, guildId);
