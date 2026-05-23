@@ -28,6 +28,11 @@ module.exports = {
     
     await member.kick(razon);
     logMod(interaction.guildId, 'kick', user.id, interaction.user.id, razon);
+    interaction.client.broadcast?.(interaction.guildId, {
+      type: 'mod_action', guildId: String(interaction.guildId),
+      action: 'kick', userId: user.id, moderatorId: interaction.user.id,
+      message: `${user.username} fue expulsado — ${razon}`,
+    });
     
     const embed = new EmbedBuilder()
       .setColor(PALETTE.error)

@@ -37,6 +37,15 @@ function startGiveawayLoop(client) {
           winner = await client.users.fetch(winnerId).catch(() => null);
         }
         endGiveaway(g.id, winner?.id ?? null);
+        client.broadcast?.(g.guild_id, {
+          type:    'giveaway_end',
+          guildId: String(g.guild_id),
+          prize:   g.prize,
+          winnerId: winner?.id ?? null,
+          message: winner
+            ? `🎁 ${winner.username} ganó: ${g.prize}`
+            : `Sin ganador para: ${g.prize}`,
+        });
         const embed = new EmbedBuilder()
           .setColor(winner ? PALETTE.gold : PALETTE.muted)
           .setTitle('✦ SORTEO FINALIZADO')

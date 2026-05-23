@@ -30,6 +30,11 @@ module.exports = {
     
     await interaction.guild.members.ban(user, { deleteMessageDays: dias, reason: razon });
     logMod(interaction.guildId, 'ban', user.id, interaction.user.id, razon);
+    interaction.client.broadcast?.(interaction.guildId, {
+      type: 'mod_action', guildId: String(interaction.guildId),
+      action: 'ban', userId: user.id, moderatorId: interaction.user.id,
+      message: `${user.username} fue baneado — ${razon}`,
+    });
     
     const embed = new EmbedBuilder()
       .setColor(PALETTE.error)

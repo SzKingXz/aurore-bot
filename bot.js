@@ -3,30 +3,33 @@ const { loadCommands, registerCommands } = require('./utils/commandLoader');
 const { loadEvents } = require('./utils/eventLoader');
 require('dotenv').config();
 
+global.auroreBroadcast = () => {};
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences
-  ]
+    GatewayIntentBits.GuildPresences,
+  ],
 });
 
-async function initializeBot() {
+async function init() {
   try {
-    const commands = loadCommands();
-    client.commands = commands;
+    client.commands = loadCommands();
     loadEvents(client);
+
+    const { broadcast } = require('./api')(client);
+
+    global.auroreBroadcast = broadcast;
+    client.broadcast       = broadcast;
+
     await client.login(process.env.TOKEN);
-    client.once('ready', async () => {
-      await registerCommands(client);
-      require('./api')(client);
-    });
-  } catch (error) {
-    console.error('Error inicializando bot:', error);
+  } catch (err) {
+    console.error('[BOOT]', err.message);
     process.exit(1);
   }
 }
 
-initializeBot();
+init();

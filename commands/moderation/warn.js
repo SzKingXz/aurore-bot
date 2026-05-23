@@ -23,6 +23,11 @@ module.exports = {
     const razon = interaction.options.getString('razon') || 'Sin especificar';
     
     logMod(interaction.guildId, 'warn', user.id, interaction.user.id, razon);
+    interaction.client.broadcast?.(interaction.guildId, {
+      type: 'mod_action', guildId: String(interaction.guildId),
+      action: 'warn', userId: user.id, moderatorId: interaction.user.id,
+      message: `${user.username} recibió una advertencia — ${razon}`,
+    });
     
     const embed = new EmbedBuilder()
       .setColor(PALETTE.error)

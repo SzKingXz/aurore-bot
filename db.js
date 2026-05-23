@@ -1,319 +1,263 @@
-let db;
-const path = require('path');
+const path    = require('path');
+const Database = require('better-sqlite3');
 
+const DB_PATH = path.join(__dirname, 'aurore.db');
+
+let db;
 try {
-  const Database = require('better-sqlite3');
-  db = new Database(path.join(__dirname, 'aurore.db'));
+  db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
-  
+  db.pragma('synchronous = NORMAL');
+  db.pragma('cache_size = -8000');
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS levels (
-      key TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      guild_id TEXT NOT NULL,
-      username TEXT DEFAULT 'Unknown',
-      xp INTEGER DEFAULT 0,
-      level INTEGER DEFAULT 0,
-      messages INTEGER DEFAULT 0,
+      key          TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      guild_id     TEXT NOT NULL,
+      username     TEXT DEFAULT 'Unknown',
+      xp           INTEGER DEFAULT 0,
+      level        INTEGER DEFAULT 0,
+      messages     INTEGER DEFAULT 0,
       last_message INTEGER DEFAULT 0
     );
-    
+    CREATE INDEX IF NOT EXISTS idx_levels_guild   ON levels(guild_id);
+    CREATE INDEX IF NOT EXISTS idx_levels_ranking ON levels(guild_id, level DESC, xp DESC);
+
     CREATE TABLE IF NOT EXISTS guild_config (
-      guild_id TEXT PRIMARY KEY,
-      level_channel TEXT,
-      log_channel TEXT,
+      guild_id        TEXT PRIMARY KEY,
+      level_channel   TEXT,
+      log_channel     TEXT,
       welcome_channel TEXT
     );
-    
+
     CREATE TABLE IF NOT EXISTS mod_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      guild_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      user_id TEXT,
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id     TEXT    NOT NULL,
+      type         TEXT    NOT NULL,
+      user_id      TEXT,
       moderator_id TEXT,
-      reason TEXT,
-      timestamp INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+      reason       TEXT,
+      timestamp    INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_modlogs_guild  ON mod_logs(guild_id);
+    CREATE INDEX IF NOT EXISTS idx_modlogs_user   ON mod_logs(guild_id, user_id);
+    CREATE INDEX IF NOT EXISTS idx_modlogs_ts     ON mod_logs(guild_id, timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS giveaways (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id   TEXT    NOT NULL,
+      channel_id TEXT,
+      message_id TEXT,
+      prize      TEXT    NOT NULL,
+      ends_at    INTEGER,
+      active     INTEGER DEFAULT 1,
+      winner_id  TEXT,
+      imagen     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_giveaways_guild  ON giveaways(guild_id);
+    CREATE INDEX IF NOT EXISTS idx_giveaways_active ON giveaways(active, ends_at);
+
+    CREATE TABLE IF NOT EXISTS giveaway_entries (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      giveaway_id INTEGER NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,
+      user_id     TEXT    NOT NULL,
+      UNIQUE(giveaway_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_entries_giveaway ON giveaway_entries(giveaway_id);
+
+    CREATE TABLE IF NOT EXISTS level_roles (
+      guild_id TEXT    NOT NULL,
+      level    INTEGER NOT NULL,
+      role_id  TEXT    NOT NULL,
+      PRIMARY KEY (guild_id, level)
+    );
+
+    CREATE TABLE IF NOT EXISTS reminders (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    TEXT    NOT NULL,
+      channel_id TEXT    NOT NULL,
+      guild_id   TEXT    NOT NULL,
+      message    TEXT    NOT NULL,
+      due_at     INTEGER NOT NULL,
+      sent       INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(sent, due_at);
+
+    CREATE TABLE IF NOT EXISTS command_stats (
+      guild_id  TEXT    NOT NULL,
+      command   TEXT    NOT NULL,
+      uses      INTEGER DEFAULT 1,
+      last_used INTEGER,
+      PRIMARY KEY (guild_id, command)
     );
   `);
-  
-  console.log('✅ SQLite inicializado');
+
+  console.log('✅ SQLite listo');
 } catch (err) {
-  console.log('⚠️ better-sqlite3 no disponible, usando fallback en memoria');
-  db = {
-    data: {},
-    prepare: () => ({
-      run: () => ({ changes: 1 }),
-      all: () => [],
-      get: () => null
-    }),
-    exec: () => {}
-  };
+  console.error('❌ SQLite error:', err.message);
+  process.exit(1);
 }
 
 const XP_CONFIG = {
   xpPerMessage: { min: 10, max: 25 },
-  cooldown: 5000,
-  xpPerLevel: 100
+  cooldown:     5000,
+  xpPerLevel:   100,
+};
+
+const stmts = {
+  getUser:       db.prepare('SELECT * FROM levels WHERE key = ?'),
+  upsertUser:    db.prepare('INSERT OR REPLACE INTO levels (key,user_id,guild_id,username,xp,level,messages,last_message) VALUES (?,?,?,?,?,?,?,?)'),
+  leaderboard:   db.prepare('SELECT * FROM levels WHERE guild_id = ? ORDER BY level DESC, xp DESC LIMIT ?'),
+  lbTotal:       db.prepare('SELECT COUNT(*) as c FROM levels WHERE guild_id = ?'),
+  rank:          db.prepare('SELECT COUNT(*) as c FROM levels WHERE guild_id = ? AND (level > ? OR (level = ? AND xp > ?))'),
+  getConfig:     db.prepare('SELECT * FROM guild_config WHERE guild_id = ?'),
+  upsertConfig:  db.prepare('INSERT OR IGNORE INTO guild_config (guild_id) VALUES (?)'),
+  insertMod:     db.prepare('INSERT INTO mod_logs (guild_id,type,user_id,moderator_id,reason) VALUES (?,?,?,?,?)'),
+  getModLogs:    db.prepare('SELECT * FROM mod_logs WHERE guild_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT ?'),
+  getLevelRole:  db.prepare('SELECT role_id FROM level_roles WHERE guild_id = ? AND level = ?'),
+  getDueReminders: db.prepare('SELECT * FROM reminders WHERE sent = 0 AND due_at <= ?'),
+  markReminder:  db.prepare('UPDATE reminders SET sent = 1 WHERE id = ?'),
+  getGiveaway:   db.prepare('SELECT id FROM giveaways WHERE message_id = ? AND guild_id = ?'),
+  activeGiveaways: db.prepare('SELECT * FROM giveaways WHERE active = 1 AND ends_at <= ?'),
+  getEntries:    db.prepare('SELECT * FROM giveaway_entries WHERE giveaway_id = ?'),
+  endGiveaway:   db.prepare('UPDATE giveaways SET active = 0, winner_id = ? WHERE id = ?'),
 };
 
 module.exports = {
   XP_CONFIG,
-  
-  addXP: (userId, guildId, xpGain, username) => {
+
+  addXP(userId, guildId, xpGain, username) {
     try {
-      const key = `${guildId}_${userId}`;
-      const user = db.prepare?.('SELECT * FROM levels WHERE key = ?')?.get(key) || {
-        user_id: userId,
-        guild_id: guildId,
-        username: username || 'Unknown',
-        xp: 0,
-        level: 0,
-        messages: 0
-      };
-
-      const newXP = (user.xp || 0) + xpGain;
-      const xpNeeded = XP_CONFIG.xpPerLevel;
-      const leveledUp = newXP >= xpNeeded;
-      const newLevel = leveledUp ? (user.level || 0) + 1 : (user.level || 0);
-      const remainingXP = leveledUp ? newXP - xpNeeded : newXP;
-
-      if (db.prepare) {
-        db.prepare(`
-          INSERT OR REPLACE INTO levels (key, user_id, guild_id, username, xp, level, messages, last_message)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(key, userId, guildId, username, remainingXP, newLevel, (user.messages || 0) + 1, Date.now());
-      }
-
-      return {
-        leveledUp,
-        newLevel,
-        newXP: remainingXP
-      };
+      const key  = `${guildId}_${userId}`;
+      const user = stmts.getUser.get(key) ?? { xp: 0, level: 0, messages: 0 };
+      const newXP    = user.xp + xpGain;
+      const leveledUp = newXP >= XP_CONFIG.xpPerLevel;
+      const newLevel  = leveledUp ? user.level + 1 : user.level;
+      const remainXP  = leveledUp ? newXP - XP_CONFIG.xpPerLevel : newXP;
+      stmts.upsertUser.run(key, userId, guildId, username, remainXP, newLevel, user.messages + 1, Date.now());
+      return { leveledUp, newLevel, newXP: remainXP };
     } catch (err) {
-      console.error('Error en addXP:', err);
+      console.error('[db.addXP]', err.message);
       return { leveledUp: false, newLevel: 0, newXP: 0 };
     }
   },
 
-  getUserData: (userId, guildId) => {
-    try {
-      const key = `${guildId}_${userId}`;
-      const user = db.prepare?.('SELECT * FROM levels WHERE key = ?')?.get(key);
-      return user || { xp: 0, level: 0, messages: 0, username: 'Unknown' };
-    } catch {
-      return { xp: 0, level: 0, messages: 0, username: 'Unknown' };
-    }
+  getUserData(userId, guildId) {
+    try { return stmts.getUser.get(`${guildId}_${userId}`) ?? { xp: 0, level: 0, messages: 0 }; }
+    catch { return { xp: 0, level: 0, messages: 0 }; }
   },
 
-  getLeaderboard: (guildId, limit = 10) => {
-    try {
-      return db.prepare?.(`
-        SELECT * FROM levels 
-        WHERE guild_id = ?
-        ORDER BY level DESC, xp DESC
-        LIMIT ?
-      `)?.all(guildId, limit) || [];
-    } catch {
-      return [];
-    }
+  getLeaderboard(guildId, limit = 10) {
+    try { return stmts.leaderboard.all(guildId, limit); }
+    catch { return []; }
   },
 
-  canGainXP: (userId, guildId) => {
+  canGainXP(userId, guildId) {
     try {
-      const key = `${guildId}_${userId}`;
-      const user = db.prepare?.('SELECT last_message FROM levels WHERE key = ?')?.get(key);
-      const lastTime = user?.last_message || 0;
-      return Date.now() - lastTime > XP_CONFIG.cooldown;
-    } catch {
+      const u = stmts.getUser.get(`${guildId}_${userId}`);
+      return !u || (Date.now() - (u.last_message ?? 0)) > XP_CONFIG.cooldown;
+    } catch { return true; }
+  },
+
+  getGuildConfig(guildId) {
+    try { return stmts.getConfig.get(guildId) ?? null; }
+    catch { return null; }
+  },
+
+  setGuildConfig(guildId, key, value) {
+    const ALLOWED = ['level_channel', 'log_channel', 'welcome_channel'];
+    if (!ALLOWED.includes(key)) return;
+    try {
+      stmts.upsertConfig.run(guildId);
+      db.prepare(`UPDATE guild_config SET ${key} = ? WHERE guild_id = ?`).run(value, guildId);
+    } catch (err) { console.error('[db.setGuildConfig]', err.message); }
+  },
+
+  logMod(guildId, type, userId, modId, reason) {
+    try {
+      stmts.insertMod.run(guildId, type, userId, modId, reason);
+      global.auroreBroadcast?.(guildId, {
+        type: 'mod_action', guildId: String(guildId),
+        action: type, userId: String(userId),
+        message: `${type.toUpperCase()} — ${reason || 'Sin razón'}`,
+        ts: Date.now(),
+      });
+    } catch (err) { console.error('[db.logMod]', err.message); }
+  },
+
+  getModLogs(guildId, userId, limit = 10) {
+    try { return stmts.getModLogs.all(guildId, userId, limit); }
+    catch { return []; }
+  },
+
+  getLevelRole(guildId, level) {
+    try { return stmts.getLevelRole.get(guildId, level) ?? null; }
+    catch { return null; }
+  },
+
+  getRemindersDue() {
+    try { return stmts.getDueReminders.all(Date.now()); }
+    catch { return []; }
+  },
+
+  markReminderSent(id) {
+    try { stmts.markReminder.run(id); }
+    catch {}
+  },
+
+  addReminder(userId, channelId, guildId, message, dueAt) {
+    try {
+      return db.prepare('INSERT INTO reminders (user_id,channel_id,guild_id,message,due_at) VALUES (?,?,?,?,?)').run(userId, channelId, guildId, message, dueAt);
+    } catch (err) { console.error('[db.addReminder]', err.message); }
+  },
+
+  createGiveaway(guildId, messageId, channelId, prize, endsAt, imagen = null) {
+    try {
+      db.prepare('INSERT INTO giveaways (guild_id,channel_id,message_id,prize,ends_at,imagen,active) VALUES (?,?,?,?,?,?,1)')
+        .run(guildId, channelId, messageId, prize, Math.floor(endsAt.getTime() / 1000), imagen);
+      return stmts.getGiveaway.get(messageId, guildId) ?? { id: 1 };
+    } catch (err) { console.error('[db.createGiveaway]', err.message); return { id: 1 }; }
+  },
+
+  getActiveGiveaways() {
+    try { return stmts.activeGiveaways.all(Math.floor(Date.now() / 1000)); }
+    catch { return []; }
+  },
+
+  getGiveawayEntries(giveawayId) {
+    try { return stmts.getEntries.all(giveawayId); }
+    catch { return []; }
+  },
+
+  enterGiveaway(giveawayId, userId) {
+    try {
+      db.prepare('INSERT INTO giveaway_entries (giveaway_id,user_id) VALUES (?,?)').run(giveawayId, userId);
       return true;
-    }
+    } catch { return false; }
   },
 
-  getGuildConfig: (guildId) => {
-    try {
-      return db.prepare?.('SELECT * FROM guild_config WHERE guild_id = ?')?.get(guildId) || null;
-    } catch {
-      return null;
-    }
+  endGiveaway(giveawayId, winnerId) {
+    try { stmts.endGiveaway.run(winnerId, giveawayId); }
+    catch (err) { console.error('[db.endGiveaway]', err.message); }
   },
 
-  setGuildConfig: (guildId, key, value) => {
+  trackCommand(guildId, command) {
     try {
-      if (db.prepare) {
-        const existing = db.prepare('SELECT * FROM guild_config WHERE guild_id = ?').get(guildId);
-        
-        if (existing) {
-          db.prepare(`UPDATE guild_config SET ${key} = ? WHERE guild_id = ?`).run(value, guildId);
-        } else {
-          db.prepare('INSERT INTO guild_config (guild_id) VALUES (?)').run(guildId);
-          db.prepare(`UPDATE guild_config SET ${key} = ? WHERE guild_id = ?`).run(value, guildId);
-        }
-        console.log(`✅ Config guardado: ${guildId} ${key}=${value}`);
-      }
-    } catch (err) {
-      console.error('Error en setGuildConfig:', err);
-    }
+      db.prepare('INSERT INTO command_stats (guild_id,command,last_used) VALUES (?,?,?) ON CONFLICT(guild_id,command) DO UPDATE SET uses=uses+1, last_used=?')
+        .run(guildId, command, Date.now(), Date.now());
+    } catch {}
   },
 
-  logMod: (guildId, type, userId, modId, reason) => {
+  getGlobalStats() {
     try {
-      if (db.prepare) {
-        db.prepare(`
-          INSERT INTO mod_logs (guild_id, type, user_id, moderator_id, reason)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(guildId, type, userId, modId, reason);
-      }
-    } catch (err) {
-      console.error('Error en logMod:', err);
-    }
+      return {
+        totalUsers:    db.prepare('SELECT COUNT(DISTINCT user_id) as c FROM levels').get()?.c ?? 0,
+        totalMessages: db.prepare('SELECT SUM(messages) as c FROM levels').get()?.c ?? 0,
+        totalXP:       db.prepare('SELECT SUM(xp) as c FROM levels').get()?.c ?? 0,
+        topLevel:      db.prepare('SELECT level FROM levels ORDER BY level DESC LIMIT 1').get()?.level ?? 0,
+      };
+    } catch { return { totalUsers: 0, totalMessages: 0, totalXP: 0, topLevel: 0 }; }
   },
-
-  getModLogs: (guildId, userId, limit = 10) => {
-    try {
-      return db.prepare?.(`
-        SELECT * FROM mod_logs 
-        WHERE guild_id = ? AND user_id = ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `)?.all(guildId, userId, limit) || [];
-    } catch {
-      return [];
-    }
-  },
-
-  trackCommand: (guildId, command) => {
-    try {
-      if (db.prepare) {
-        db.prepare(`
-          INSERT INTO command_stats (guild_id, command, last_used) VALUES (?, ?, ?)
-          ON CONFLICT(guild_id, command) DO UPDATE SET uses = uses + 1, last_used = ?
-        `).run(guildId, command, Date.now(), Date.now());
-      }
-    } catch {
-      return;
-    }
-  },
-
-  addReminder: (userId, channelId, guildId, message, dueAt) => {
-    try {
-      if (db.prepare) {
-        return db.prepare(`
-          INSERT INTO reminders (user_id, channel_id, guild_id, message, due_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(userId, channelId, guildId, message, dueAt);
-      }
-    } catch (err) {
-      console.error('Error en addReminder:', err);
-    }
-  },
-
-  getRemindersDue: () => {
-    try {
-      return db.prepare?.(`
-        SELECT * FROM reminders WHERE sent = 0 AND due_at <= ?
-      `)?.all(Date.now()) || [];
-    } catch {
-      return [];
-    }
-  },
-
-  markReminderSent: (reminderId) => {
-    try {
-      if (db.prepare) {
-        db.prepare('UPDATE reminders SET sent = 1 WHERE id = ?').run(reminderId);
-      }
-    } catch {
-      return;
-    }
-  },
-
-  createGiveaway: (guildId, messageId, channelId, prize, endsAt, imagen = null) => {
-    try {
-      if (db.prepare) {
-        db.prepare(`
-          INSERT INTO giveaways (guild_id, channel_id, message_id, prize, ends_at, imagen, active)
-          VALUES (?, ?, ?, ?, ?, ?, 1)
-        `).run(guildId, channelId, messageId, prize, Math.floor(endsAt.getTime() / 1000), imagen);
-        
-        const giveaway = db.prepare(`
-          SELECT id FROM giveaways WHERE message_id = ? AND guild_id = ?
-        `).get(messageId, guildId);
-        
-        return giveaway || { id: 1 };
-      }
-      return { id: Math.random() * 1000 };
-    } catch (err) {
-      console.error('Error en createGiveaway:', err);
-      return { id: 1 };
-    }
-  },
-
-  getActiveGiveaways: () => {
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      return db.prepare?.(`
-        SELECT * FROM giveaways WHERE active = 1 AND ends_at <= ?
-      `)?.all(now) || [];
-    } catch {
-      return [];
-    }
-  },
-
-  getGiveawayEntries: (giveawayId) => {
-    try {
-      return db.prepare?.(`
-        SELECT * FROM giveaway_entries WHERE giveaway_id = ?
-      `)?.all(giveawayId) || [];
-    } catch {
-      return [];
-    }
-  },
-
-  enterGiveaway: (giveawayId, userId) => {
-    try {
-      if (db.prepare) {
-        const entry = db.prepare('SELECT * FROM giveaway_entries WHERE giveaway_id = ? AND user_id = ?').get(giveawayId, userId);
-        if (entry) return false;
-        db.prepare(`
-          INSERT INTO giveaway_entries (giveaway_id, user_id) VALUES (?, ?)
-        `).run(giveawayId, userId);
-        return true;
-      }
-      return true;
-    } catch {
-      return true;
-    }
-  },
-
-  endGiveaway: (giveawayId, winnerId) => {
-    try {
-      if (db.prepare) {
-        db.prepare('UPDATE giveaways SET active = 0, winner_id = ? WHERE id = ?').run(winnerId, giveawayId);
-      }
-    } catch {
-      return;
-    }
-  },
-
-  getGlobalStats: () => {
-    try {
-      const totalUsers = db.prepare?.('SELECT COUNT(DISTINCT user_id) as count FROM levels')?.get()?.count || 0;
-      const totalMessages = db.prepare?.('SELECT SUM(messages) as total FROM levels')?.get()?.total || 0;
-      const totalXP = db.prepare?.('SELECT SUM(xp) as total FROM levels')?.get()?.total || 0;
-      const topLevel = db.prepare?.('SELECT level FROM levels ORDER BY level DESC LIMIT 1')?.get()?.level || 0;
-
-      return { totalUsers, totalMessages, totalXP, topLevel };
-    } catch {
-      return { totalUsers: 0, totalMessages: 0, totalXP: 0, topLevel: 0 };
-    }
-  },
-
-  getLevelRole: (guildId, level) => {
-    try {
-      return db.prepare?.('SELECT role_id FROM level_roles WHERE guild_id = ? AND level = ?')?.get(guildId, level) || null;
-    } catch {
-      return null;
-    }
-  }
 };

@@ -2,9 +2,8 @@ services:
   - type: web
     name: aurore-bot
     runtime: node
-    plan: free
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node bot.js
     envVars:
       - key: TOKEN
         sync: false
@@ -14,9 +13,15 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: INTERNAL_TOKEN
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: PORT
         value: 3001
-      - key: NODE_ENV
-        value: production
-      - key: ALLOWED_ORIGINS
-        value: https://aurore-dashboard.vercel.app
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: aurore-db
+      mountPath: /opt/render/project/src
+      sizeGB: 1

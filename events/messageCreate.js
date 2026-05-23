@@ -79,6 +79,16 @@ module.exports = {
     if (result.leveledUp) {
       const userData = getUserData(userId, guildId);
       const config = getGuildChannelConfig(guildId);
+
+      client.broadcast?.(guildId, {
+        type:    'level_up',
+        guildId: String(guildId),
+        userId:  String(userId),
+        username,
+        newLevel: result.newLevel,
+        message: `${username} alcanzó el nivel ${result.newLevel}`,
+        ts: Date.now(),
+      });
       
       const member = await message.guild.members.fetch(userId).catch(() => null);
       let embedColor = PALETTE.gold;

@@ -1,36 +1,39 @@
 {
   "name": "aurore-bot",
   "version": "4.0.0",
-  "description": "AURORE Discord Bot - Modular Architecture with XP System, Moderation & More",
+  "description": "AURORE Discord Bot",
   "main": "bot.js",
-  "author": "Your Name",
+  "author": "",
   "license": "MIT",
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "engines": { "node": ">=20.0.0" },
   "scripts": {
-    "start": "node bot.js",
-    "dev": "node bot.js",
-    "register": "node bot.js --register",
-    "test": "echo 'No tests configured'",
-    "heroku-postbuild": "npm install --ignore-scripts"
+    "start":     "node bot.js",
+    "dev":       "node bot.js",
+    "test":      "jest --runInBand --forceExit",
+    "test:unit": "jest tests/unit --runInBand --forceExit",
+    "test:int":  "jest tests/integration --runInBand --forceExit",
+    "test:cov":  "jest --coverage --runInBand --forceExit",
+    "load":      "node tests/load/runner.js",
+    "ci":        "node tests/ci.js"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "collectCoverageFrom": ["security.js","cache.js","db.js","api.js"],
+    "coverageReporters": ["text","text-summary","lcov"],
+    "testTimeout": 15000
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "sqlite3": "^5.1.6"
-  },
-  "optionalDependencies": {
+    "discord.js":     "^14.14.1",
+    "express":        "^4.18.2",
+    "cors":           "^2.8.5",
+    "dotenv":         "^16.4.5",
+    "ws":             "^8.17.1",
     "better-sqlite3": "^9.4.3"
   },
-  "keywords": [
-    "discord",
-    "bot",
-    "discord-bot",
-    "modular",
-    "xp-system",
-    "moderation"
-  ]
+  "devDependencies": {
+    "jest":       "^29.7.0",
+    "supertest":  "^7.0.0",
+    "autocannon": "^7.15.0"
+  }
 }

@@ -35,6 +35,11 @@ module.exports = {
     
     await member.timeout(minutos * 60000, razon);
     logMod(interaction.guildId, 'timeout', user.id, interaction.user.id, `${minutos}min - ${razon}`);
+    interaction.client.broadcast?.(interaction.guildId, {
+      type: 'mod_action', guildId: String(interaction.guildId),
+      action: 'timeout', userId: user.id, moderatorId: interaction.user.id,
+      message: `${user.username} silenciado ${minutos}min — ${razon}`,
+    });
     
     const embed = new EmbedBuilder()
       .setColor(PALETTE.error)
