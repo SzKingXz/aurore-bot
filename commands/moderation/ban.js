@@ -6,44 +6,40 @@ const { sendModLog } = require('../../utils/modLog');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ban')
-    .setDescription('Baneo a un usuario')
-    .addUserOption(opt => opt
-      .setName('usuario')
-      .setDescription('Usuario a banear')
-      .setRequired(true))
-    .addStringOption(opt => opt
-      .setName('razon')
-      .setDescription('Razón del baneo'))
-    .addIntegerOption(opt => opt
-      .setName('dias')
-      .setDescription('Días de historial a eliminar')
-      .setMinValue(0)
-      .setMaxValue(7)),
+    .setDescription('Banea a un usuario del servidor')
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a banear').setRequired(true))
+    .addStringOption(opt => opt.setName('razon').setDescription('Razón del baneo'))
+    .addIntegerOption(opt => opt.setName('dias').setDescription('Días de historial a eliminar').setMinValue(0).setMaxValue(7)),
   async execute(interaction) {
     if (!interaction.member.permissions.has('BanMembers')) {
       return interaction.reply({ content: '❌ No tienes permisos.', ephemeral: true });
     }
-    
-    const user = interaction.options.getUser('usuario');
+    const user  = interaction.options.getUser('usuario');
     const razon = interaction.options.getString('razon') || 'Sin especificar';
-    const dias = interaction.options.getInteger('dias') || 0;
-    
-    await interaction.guild.members.ban(user, { deleteMessageDays: dias, reason: razon });
+    const dias  = interaction.options.getInteger('dias') || 0;
+
+    try {
+      await interaction.guild.members.ban(user, { deleteMessageDays: dias, reason: razon });
+    } catch {
+      return interaction.reply({ content: '❌ No pude banear a ese usuario.', ephemeral: true });
+    }
+
     logMod(interaction.guildId, 'ban', user.id, interaction.user.id, razon);
     interaction.client.broadcast?.(interaction.guildId, {
       type: 'mod_action', guildId: String(interaction.guildId),
       action: 'ban', userId: user.id, moderatorId: interaction.user.id,
-      message: `${user.username} fue baneado — ${razon}`,
+      message: `${user.username} fue baneado — ${razon}`, ts: Date.now(),
     });
-    
+
     const embed = new EmbedBuilder()
       .setColor(PALETTE.error)
-      .setTitle('✦ BANEO')
-      .setDescription(`${user} fue baneado`)
+      .setTitle('BANEO')
+      .setDescription(`${user} fue baneado del servidor.`)
       .addFields({ name: 'Razón', value: razon })
-      .setFooter({ text: 'AURORE SYSTEM' });
-    
+      .setFooter({ text: 'AURORE SYSTEM' })
+      .setTimestamp();
+
     await sendModLog(interaction.guild, embed);
     interaction.reply({ embeds: [embed] });
-  }
+  },
 };

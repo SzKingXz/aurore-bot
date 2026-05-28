@@ -8,22 +8,20 @@ module.exports = {
     .setDescription('Configura el canal de logs de moderación')
     .addChannelOption(opt => opt
       .setName('canal')
-      .setDescription('Canal para logs')
+      .setDescription('Canal para logs de moderación')
       .setRequired(true)
       .addChannelTypes(ChannelType.GuildText)),
   async execute(interaction) {
     if (!interaction.member.permissions.has('ManageGuild')) {
       return interaction.reply({ content: '❌ No tienes permisos.', ephemeral: true });
     }
-    
     const canal = interaction.options.getChannel('canal');
-    setGuildConfig(interaction.guildId, { log_channel: canal.id });
-    
+    setGuildConfig(interaction.guildId, 'log_channel', canal.id);
     const embed = new EmbedBuilder()
       .setColor(PALETTE.success)
-      .setTitle('✦ CONFIGURADO')
+      .setTitle('CONFIGURADO')
       .setDescription(`Canal de logs: ${canal}`)
-      .setFooter({ text: 'AURORE SYSTEM' });
+      .setFooter({ text: 'AURORE' });
     interaction.reply({ embeds: [embed] });
-  }
+  },
 };

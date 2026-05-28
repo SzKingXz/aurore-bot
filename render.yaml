@@ -16,9 +16,9 @@ services:
       - key: INTERNAL_TOKEN
         sync: false
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://aurore-dashboard.vercel.app
       - key: PORT
-        value: 3001
+        value: 10000
     healthCheckPath: /health
     autoDeploy: true
     disk:

@@ -1,10 +1,11 @@
 const PALETTE = {
-  primary: 0x7B2FE4,
-  cyan: 0x00D4FF,
-  gold: 0xFFD700,
-  error: 0xFF4757,
-  success: 0x2ED573,
-  muted: 0x2F3136
+  primary: 0x2A4FFF,
+  blue:    0x4F74FF,
+  gold:    0xD4A84B,
+  error:   0xEF4444,
+  success: 0x4ADE80,
+  muted:   0x2F3136,
+  cyan:    0x5B8AFF,
 };
 
 const COLOR_ROLES = [
@@ -17,7 +18,7 @@ const COLOR_ROLES = [
   { name: '🟤 Café',     color: '#8B4513', value: 'color_cafe'    },
   { name: '⚫ Negro',    color: '#2C3E50', value: 'color_negro'   },
   { name: '⚪ Blanco',   color: '#ECF0F1', value: 'color_blanco'  },
-  { name: '🩷 Rosa',     color: '#FF69B4', value: 'color_rosa'    }
+  { name: '🩷 Rosa',     color: '#FF69B4', value: 'color_rosa'    },
 ];
 
 const EIGHTBALL = [
@@ -31,35 +32,35 @@ const EIGHTBALL = [
   'Muy prometedor',
   'Respuesta nebulosa, intenta después',
   'Pregunta de nuevo después',
-  'Mejor no decirte ahora',
+  'Mejor no decirlo ahora',
   'Concentrese e intente de nuevo',
   'No cuentes con ello',
   'No',
   'Definitivamente no',
   'Mis fuentes dicen que no',
   'Las perspectivas no son tan buenas',
-  'Muy dudoso'
+  'Muy dudoso',
 ];
 
 const REGION_ROLES = [
-  { name: '🌎 Latam',      value: 'region_latam' },
-  { name: '🇲🇽 México',   value: 'region_mexico' },
-  { name: '🇦🇷 Argentina', value: 'region_argentina' },
-  { name: '🇨🇴 Colombia',  value: 'region_colombia' },
-  { name: '🇪🇸 España',    value: 'region_españa' },
-  { name: '🇺🇸 USA',       value: 'region_usa' },
-  { name: '🇧🇷 Brasil',    value: 'region_brasil' },
-  { name: '🇨🇱 Chile',     value: 'region_chile' },
-  { name: '🇵🇪 Perú',      value: 'region_peru' },
-  { name: '🌍 Europa',     value: 'region_europa' },
-  { name: '🌏 Asia',       value: 'region_asia' },
-  { name: '❓ Otro',       value: 'region_otro' }
+  { name: '🌎 Latam',       value: 'region_latam'      },
+  { name: '🇲🇽 México',    value: 'region_mexico'     },
+  { name: '🇦🇷 Argentina',  value: 'region_argentina'  },
+  { name: '🇨🇴 Colombia',   value: 'region_colombia'   },
+  { name: '🇪🇸 España',     value: 'region_espana'     },
+  { name: '🇺🇸 USA',        value: 'region_usa'        },
+  { name: '🇧🇷 Brasil',     value: 'region_brasil'     },
+  { name: '🇨🇱 Chile',      value: 'region_chile'      },
+  { name: '🇵🇪 Perú',       value: 'region_peru'       },
+  { name: '🌍 Europa',      value: 'region_europa'     },
+  { name: '🌏 Asia',        value: 'region_asia'       },
+  { name: '❓ Otro',        value: 'region_otro'       },
 ];
 
 const SPAM_CONFIG = {
-  LIMIT: 6,
-  WINDOW: 5000,
-  TIMEOUT_MIN: 5
+  LIMIT:       6,
+  WINDOW:   5000,
+  TIMEOUT_MIN: 5,
 };
 
 module.exports = { PALETTE, COLOR_ROLES, REGION_ROLES, EIGHTBALL, SPAM_CONFIG };

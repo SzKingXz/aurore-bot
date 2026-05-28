@@ -1,44 +1,37 @@
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
 
 function loadCommands() {
-  const commands = [];
+  const commands     = [];
   const commandsPath = path.join(__dirname, '..', 'commands');
-  const folders = fs.readdirSync(commandsPath);
-  
+  const folders      = fs.readdirSync(commandsPath);
+
   for (const folder of folders) {
     const folderPath = path.join(commandsPath, folder);
-    const isDirectory = fs.statSync(folderPath).isDirectory();
-    if (!isDirectory) continue;
-    
+    if (!fs.statSync(folderPath).isDirectory()) continue;
+
     const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.js'));
     for (const file of files) {
       const filePath = path.join(folderPath, file);
-      const command = require(filePath);
-      if (command.data) commands.push(command);
+      try {
+        const command = require(filePath);
+        if (command?.data && typeof command.execute === 'function') {
+          commands.push(command);
+        } else {
+          console.warn(`[CMD] ${file}: sin data o execute — omitido`);
+        }
+      } catch (err) {
+        console.error(`[CMD] Error cargando ${file}:`, err.message);
+      }
     }
   }
-  return commands;
-}
 
-async function registerCommands(client) {
-  const commands = loadCommands();
-  const commandData = commands.map(cmd => cmd.data.toJSON());
-  
-  try {
-    await client.rest.put(
-      require('discord.js').Routes.applicationCommands(client.user.id),
-      { body: commandData }
-    );
-    console.log(`✅ ${commands.length} comandos registrados`);
-  } catch (error) {
-    console.error('Error registrando comandos:', error);
-  }
+  console.log(`[CMD] ${commands.length} comandos cargados`);
   return commands;
 }
 
 function getCommand(name, commands) {
-  return commands.find(cmd => cmd.data.name === name);
+  return commands.find(cmd => cmd.data.name === name) ?? null;
 }
 
-module.exports = { loadCommands, registerCommands, getCommand };
+module.exports = { loadCommands, getCommand };

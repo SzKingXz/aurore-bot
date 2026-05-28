@@ -6,42 +6,39 @@ const { sendModLog } = require('../../utils/modLog');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('kick')
-    .setDescription('Expulsa a un usuario')
-    .addUserOption(opt => opt
-      .setName('usuario')
-      .setDescription('Usuario a expulsar')
-      .setRequired(true))
-    .addStringOption(opt => opt
-      .setName('razon')
-      .setDescription('Razón de la expulsión')),
+    .setDescription('Expulsa a un usuario del servidor')
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a expulsar').setRequired(true))
+    .addStringOption(opt => opt.setName('razon').setDescription('Razón de la expulsión')),
   async execute(interaction) {
     if (!interaction.member.permissions.has('KickMembers')) {
       return interaction.reply({ content: '❌ No tienes permisos.', ephemeral: true });
     }
-    
-    const user = interaction.options.getUser('usuario');
-    const razon = interaction.options.getString('razon') || 'Sin especificar';
+    const user   = interaction.options.getUser('usuario');
+    const razon  = interaction.options.getString('razon') || 'Sin especificar';
     const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-    
-    if (!member) return interaction.reply({ content: '❌ Usuario no encontrado.', ephemeral: true });
-    if (!member.kickable) return interaction.reply({ content: '❌ No puedo expulsar a este usuario.', ephemeral: true });
-    
-    await member.kick(razon);
+
+    if (!member)          return interaction.reply({ content: '❌ Usuario no encontrado.', ephemeral: true });
+    if (!member.kickable) return interaction.reply({ content: '❌ No puedo expulsar a ese usuario.', ephemeral: true });
+
+    try { await member.kick(razon); }
+    catch { return interaction.reply({ content: '❌ No pude expulsar a ese usuario.', ephemeral: true }); }
+
     logMod(interaction.guildId, 'kick', user.id, interaction.user.id, razon);
     interaction.client.broadcast?.(interaction.guildId, {
       type: 'mod_action', guildId: String(interaction.guildId),
       action: 'kick', userId: user.id, moderatorId: interaction.user.id,
-      message: `${user.username} fue expulsado — ${razon}`,
+      message: `${user.username} fue expulsado — ${razon}`, ts: Date.now(),
     });
-    
+
     const embed = new EmbedBuilder()
       .setColor(PALETTE.error)
-      .setTitle('✦ EXPULSIÓN')
-      .setDescription(`${user} fue expulsado`)
+      .setTitle('EXPULSIÓN')
+      .setDescription(`${user} fue expulsado del servidor.`)
       .addFields({ name: 'Razón', value: razon })
-      .setFooter({ text: 'AURORE SYSTEM' });
-    
+      .setFooter({ text: 'AURORE SYSTEM' })
+      .setTimestamp();
+
     await sendModLog(interaction.guild, embed);
     interaction.reply({ embeds: [embed] });
-  }
+  },
 };

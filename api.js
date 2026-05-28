@@ -26,16 +26,20 @@ function internalOnly(req, res, next) {
 }
 
 function requireSession(req, res, next) {
-  const raw   = req.headers.cookie ?? '';
-  const m     = raw.match(/(?:^|;\s*)aurore_access=([^;]+)/);
-  const token = m ? decodeURIComponent(m[1]) : null;
-  const bearer = req.headers['authorization']?.startsWith('Bearer ') ? req.headers['authorization'].slice(7) : null;
+  if (req._bypassAuth) return next();
+  const raw    = req.headers.cookie ?? '';
+  const m      = raw.match(/(?:^|;\s*)aurore_access=([^;]+)/);
+  const token  = m ? decodeURIComponent(m[1]) : null;
+  const bearer = req.headers['authorization']?.startsWith('Bearer ')
+    ? req.headers['authorization'].slice(7)
+    : null;
   req._accessToken = bearer ?? token ?? null;
   if (!req._accessToken) return res.status(401).json({ error: 'Unauthorized' });
   next();
 }
 
 function requireAdmin(req, res, next) {
+  if (req._bypassAuth) return next();
   const raw = req.headers.cookie ?? '';
   let guilds = [];
   try { const m = raw.match(/(?:^|;\s*)aurore_guilds=([^;]+)/); if (m) guilds = JSON.parse(decodeURIComponent(m[1])); } catch {}
@@ -47,8 +51,21 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function internalOrSession(req, res, next) {
+  const t = req.headers['x-internal-token'];
+  if (process.env.INTERNAL_TOKEN && t === process.env.INTERNAL_TOKEN) {
+    req._bypassAuth = true;
+    return next();
+  }
+  requireSession(req, res, err => {
+    if (err) return next(err);
+    requireAdmin(req, res, next);
+  });
+}
+
 function requireMod(client) {
   return async (req, res, next) => {
+    if (req._bypassAuth) return next();
     const raw = req.headers.cookie ?? '';
     let userObj = null;
     try { const m = raw.match(/(?:^|;\s*)aurore_user=([^;]+)/); if (m) userObj = JSON.parse(decodeURIComponent(m[1])); } catch {}
@@ -72,50 +89,68 @@ function broadcast(guildId, data) {
   for (const ws of clients) { if (ws.readyState === 1) ws.send(msg); }
 }
 
+const CONFIGURABLE_FIELDS = ['level_channel', 'log_channel', 'welcome_channel', 'suggest_channel'];
+
 module.exports = function startAPI(client) {
   const app    = express();
   const server = http.createServer(app);
   const wss    = new WebSocketServer({ server, path: '/ws' });
-  const wsConns = new Map();
 
   wss.on('connection', (ws, req) => {
     const url     = new URL(req.url, `http://${req.headers.host}`);
     const guildId = sanitizeString(url.searchParams.get('guildId') ?? '', 25);
     if (!isValidSnowflake(guildId)) { ws.close(4000, 'Invalid guildId'); return; }
     const ip = getIP(req);
-    wsConns.set(ip, (wsConns.get(ip) ?? 0) + 1);
-    if (wsConns.get(ip) > 5) { ws.close(4029, 'Too many connections'); return; }
+    const connMap = wss._connMap ?? (wss._connMap = new Map());
+    connMap.set(ip, (connMap.get(ip) ?? 0) + 1);
+    if (connMap.get(ip) > 5) { ws.close(4029, 'Too many connections'); return; }
     if (!guildClients.has(guildId)) guildClients.set(guildId, new Set());
     guildClients.get(guildId).add(ws);
-    ws.on('close', () => { guildClients.get(guildId)?.delete(ws); wsConns.set(ip, Math.max(0, (wsConns.get(ip) ?? 1) - 1)); });
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('close', () => {
+      guildClients.get(guildId)?.delete(ws);
+      connMap.set(ip, Math.max(0, (connMap.get(ip) ?? 1) - 1));
+    });
     ws.on('error', () => ws.close());
   });
+
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach(ws => {
+      if (!ws.isAlive) { ws.terminate(); return; }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30_000);
+  wss.on('close', () => clearInterval(heartbeat));
 
   global.auroreBroadcast = broadcast;
 
   app.set('trust proxy', 1);
-  app.use(cors({ origin: (process.env.ALLOWED_ORIGINS?.split(',') ?? []).map(o => o.trim()), methods: ['GET','PATCH','POST'], allowedHeaders: ['Content-Type','Authorization','x-internal-token'], credentials: true }));
+  app.use(cors({
+    origin:       (process.env.ALLOWED_ORIGINS?.split(',') ?? []).map(o => o.trim()),
+    methods:      ['GET', 'PATCH', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-token'],
+    credentials:  true,
+  }));
   app.use(express.json({ limit: '50kb' }));
   app.use(securityHeaders);
   app.use(limiters.global.middleware());
   app.use(sanitizeQuery);
 
-  app.get('/health', (_, res) => res.json({ status: 'ok', cache: cache.stats(), timestamp: Date.now() }));
+  app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime(), timestamp: Date.now() }));
 
   app.get('/api/bot/stats', requireSession, wrap(async (req, res) => {
-    const data = await cached('bot:stats', TTL.stats, () => {
-      const db = getDb();
-      return {
-        guilds:     db.prepare('SELECT COUNT(DISTINCT guild_id) as c FROM levels').get()?.c ?? 0,
-        users:      db.prepare('SELECT COUNT(DISTINCT user_id)  as c FROM levels').get()?.c ?? 0,
-        modActions: db.prepare('SELECT COUNT(*) as c FROM mod_logs').get()?.c ?? 0,
-        giveaways:  db.prepare('SELECT COUNT(*) as c FROM giveaways').get()?.c ?? 0,
-        wsLatency:  client?.ws?.ping ?? null,
-        uptime:     process.uptime(),
-        memoryMB:   Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-        timestamp:  Date.now(),
-      };
-    });
+    const data = await cached('bot:stats', TTL.stats, () => ({
+      guilds:     getDb().prepare('SELECT COUNT(DISTINCT guild_id) as c FROM levels').get()?.c ?? 0,
+      users:      getDb().prepare('SELECT COUNT(DISTINCT user_id)  as c FROM levels').get()?.c ?? 0,
+      modActions: getDb().prepare('SELECT COUNT(*) as c FROM mod_logs').get()?.c ?? 0,
+      giveaways:  getDb().prepare('SELECT COUNT(*) as c FROM giveaways').get()?.c ?? 0,
+      wsLatency:  client?.ws?.ping ?? null,
+      uptime:     process.uptime(),
+      memoryMB:   Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      timestamp:  Date.now(),
+    }));
     res.json(data);
   }));
 
@@ -173,8 +208,7 @@ module.exports = function startAPI(client) {
     const sort     = sortMap[req.query.sort] ?? sortMap.level;
     const limit    = sanitizeInt(req.query.limit, { min: 1, max: 50, def: 30 });
     const cacheKey = `guild:search:${guildId}:${q}:${minLevel}:${maxLevel}:${sort}:${limit}`;
-
-    const data = await cached(cacheKey, 15_000, () => {
+    const data     = await cached(cacheKey, 15_000, () => {
       const db = getDb();
       const params = [guildId];
       let where = 'WHERE guild_id = ?';
@@ -214,17 +248,16 @@ module.exports = function startAPI(client) {
     const offset = sanitizeInt(req.query.offset, { min: 0, max: 50000, def: 0 });
     const type   = sanitizeString(req.query.type ?? '', 20);
     const search = sanitizeString(req.query.search ?? '', 25);
-    const VALID_TYPES = ['ban','kick','warn','timeout','mute','unmute','unban'];
-    if (type && !VALID_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid type filter' });
-    if (search && !isValidSnowflake(search))  return res.status(400).json({ error: 'Invalid search ID' });
-
+    const VALID  = ['ban','kick','warn','timeout','mute','unmute','unban'];
+    if (type && !VALID.includes(type))         return res.status(400).json({ error: 'Invalid type' });
+    if (search && !isValidSnowflake(search))   return res.status(400).json({ error: 'Invalid search ID' });
     const cacheKey = `guild:modlogs:${guildId}:${limit}:${offset}:${type}:${search}`;
     const data = await cached(cacheKey, TTL.modLogs, () => {
       const db = getDb();
       const params = [guildId];
       let where = 'WHERE guild_id = ?';
-      if (type)   { where += ' AND type = ?'; params.push(type); }
-      if (search) { where += ' AND (user_id = ? OR moderator_id = ?)'; params.push(search, search); }
+      if (type)   { where += ' AND type = ?';                                params.push(type); }
+      if (search) { where += ' AND (user_id = ? OR moderator_id = ?)';       params.push(search, search); }
       return {
         guildId,
         logs:      db.prepare(`SELECT * FROM mod_logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`).all(...params, limit, offset),
@@ -256,7 +289,7 @@ module.exports = function startAPI(client) {
     res.json(data);
   }));
 
-  guild.get('/config', internalOnly, wrap(async (req, res) => {
+  guild.get('/config', internalOrSession, wrap(async (req, res) => {
     const { guildId } = req.params;
     const data = await cached(`guild:config:${guildId}`, TTL.config, () => {
       const db = getDb();
@@ -268,42 +301,51 @@ module.exports = function startAPI(client) {
     res.json(data);
   }));
 
-  guild.patch('/config', limiters.config.middleware(), internalOnly, sanitizeBody, wrap((req, res) => {
+  guild.patch('/config', limiters.config.middleware(), internalOrSession, sanitizeBody, wrap((req, res) => {
     const { guildId } = req.params;
-    const { level_channel, log_channel, welcome_channel } = req.body ?? {};
-    const db  = getWrDb();
-    const toV = v => (v === '' || v == null) ? null : v;
-    const ex  = db.prepare('SELECT guild_id FROM guild_config WHERE guild_id = ?').get(guildId);
+    const body = req.body ?? {};
+    const db   = getWrDb();
+    const toV  = v => (v === '' || v == null) ? null : String(v);
+    const ex   = db.prepare('SELECT guild_id FROM guild_config WHERE guild_id = ?').get(guildId);
     if (ex) {
       const sets = [], vals = [];
-      if (level_channel   !== undefined) { sets.push('level_channel = ?');   vals.push(toV(level_channel)); }
-      if (log_channel     !== undefined) { sets.push('log_channel = ?');     vals.push(toV(log_channel)); }
-      if (welcome_channel !== undefined) { sets.push('welcome_channel = ?'); vals.push(toV(welcome_channel)); }
+      for (const f of CONFIGURABLE_FIELDS) {
+        if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(toV(body[f])); }
+      }
       if (sets.length) db.prepare(`UPDATE guild_config SET ${sets.join(', ')} WHERE guild_id = ?`).run(...vals, guildId);
     } else {
-      db.prepare('INSERT INTO guild_config (guild_id, level_channel, log_channel, welcome_channel) VALUES (?, ?, ?, ?)').run(guildId, toV(level_channel), toV(log_channel), toV(welcome_channel));
+      const fields = CONFIGURABLE_FIELDS.filter(f => body[f] !== undefined);
+      if (fields.length) {
+        db.prepare(`INSERT INTO guild_config (guild_id, ${fields.join(', ')}) VALUES (?, ${fields.map(() => '?').join(', ')})`).run(guildId, ...fields.map(f => toV(body[f])));
+      } else {
+        db.prepare('INSERT OR IGNORE INTO guild_config (guild_id) VALUES (?)').run(guildId);
+      }
     }
     cache.del(`guild:config:${guildId}`);
     res.json(db.prepare('SELECT * FROM guild_config WHERE guild_id = ?').get(guildId));
   }));
 
-  guild.get('/channels', internalOnly, wrap(async (req, res) => {
+  guild.get('/channels', internalOrSession, wrap(async (req, res) => {
     const { guildId } = req.params;
     const data = await cached(`guild:channels:${guildId}`, TTL.channels, () => {
       const g = client?.guilds?.cache?.get(guildId);
       if (!g) return null;
-      return { channels: g.channels.cache.filter(c => c.type === 0).map(c => ({ id: c.id, name: c.name, parentName: c.parent?.name ?? null })).sort((a, b) => a.name.localeCompare(b.name)) };
+      return {
+        channels: g.channels.cache
+          .filter(c => c.type === 0)
+          .map(c => ({ id: c.id, name: c.name, parentName: c.parent?.name ?? null }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      };
     });
     if (!data) return res.status(404).json({ error: 'Guild not in cache' });
     res.json(data);
   }));
 
   app.use('/api/guild/:guildId', guild);
-
   app.use((err, req, res, _next) => { console.error('[API]', err.message); res.status(500).json({ error: 'Internal server error' }); });
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
-  const PORT = process.env.PORT || 3001;
+  const PORT = Number(process.env.PORT) || 3001;
   server.listen(PORT, () => console.log(`[API] :${PORT}`));
   return { app, broadcast };
 };
