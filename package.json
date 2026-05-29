@@ -7,14 +7,13 @@
   "license": "MIT",
   "engines": { "node": ">=20.0.0" },
   "scripts": {
-    "start":     "node bot.js",
-    "dev":       "node bot.js",
-    "test":      "jest --runInBand --forceExit",
-    "test:unit": "jest tests/unit --runInBand --forceExit",
-    "test:int":  "jest tests/integration --runInBand --forceExit",
-    "test:cov":  "jest --coverage --runInBand --forceExit",
-    "load":      "node tests/load/runner.js",
-    "ci":        "node tests/ci.js"
+    "start":       "node bot.js",
+    "dev":         "node bot.js",
+    "postinstall": "npm rebuild better-sqlite3 --build-from-source",
+    "test":        "jest --runInBand --forceExit",
+    "test:unit":   "jest tests/unit --runInBand --forceExit",
+    "test:int":    "jest tests/integration --runInBand --forceExit",
+    "test:cov":    "jest --coverage --runInBand --forceExit"
   },
   "jest": {
     "testEnvironment": "node",
