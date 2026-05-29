@@ -16,12 +16,10 @@ services:
       - key: INTERNAL_TOKEN
         sync: false
       - key: ALLOWED_ORIGINS
-        value: https://aurore-dashboard.vercel.app
+        value: https://frontend-teal-eight-79.vercel.app
       - key: PORT
         value: 10000
+      - key: NODE_ENV
+        value: production
     healthCheckPath: /health
     autoDeploy: true
-    disk:
-      name: aurore-db
-      mountPath: /opt/render/project/src
-      sizeGB: 1
