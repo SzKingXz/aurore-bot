@@ -1,5 +1,5 @@
 const { Events, ActivityType } = require('discord.js');
-const { startReminderLoop, startGiveawayLoop } = require('./loops');
+const { startReminderLoop, startGiveawayLoop, startKeepAlive } = require('./loops');
 
 module.exports = {
   name: Events.ClientReady,
@@ -8,9 +8,10 @@ module.exports = {
     console.log(`✅ AURORE online — ${client.user.tag}`);
     client.user.setPresence({
       activities: [{ name: '/help • aurore system', type: ActivityType.Watching }],
-      status: 'online'
+      status: 'online',
     });
     startReminderLoop(client);
     startGiveawayLoop(client);
-  }
+    startKeepAlive();
+  },
 };

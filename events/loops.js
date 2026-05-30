@@ -2,6 +2,13 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { PALETTE } = require('../utils/constants');
 const { getRemindersDue, markReminderSent, getActiveGiveaways, getGiveawayEntries, endGiveaway } = require('../db');
 
+function startKeepAlive() {
+  const url = `https://aurore-bot-h05w.onrender.com/health`;
+  const ping = () => fetch(url).catch(() => {});
+  ping();
+  setInterval(ping, 840_000);
+}
+
 function startReminderLoop(client) {
   const check = async () => {
     const due = getRemindersDue();
@@ -23,7 +30,6 @@ function startReminderLoop(client) {
       }
     }
   };
-
   check();
   const id = setInterval(check, 30_000);
   return () => clearInterval(id);
@@ -34,9 +40,9 @@ function startGiveawayLoop(client) {
     const ended = getActiveGiveaways();
     for (const g of ended) {
       try {
-        const channel  = await client.channels.fetch(g.channel_id).catch(() => null);
-        const msg      = channel ? await channel.messages.fetch(g.message_id).catch(() => null) : null;
-        const entries  = getGiveawayEntries(g.id);
+        const channel = await client.channels.fetch(g.channel_id).catch(() => null);
+        const msg     = channel ? await channel.messages.fetch(g.message_id).catch(() => null) : null;
+        const entries = getGiveawayEntries(g.id);
 
         let winner = null;
         if (entries.length > 0) {
@@ -47,13 +53,9 @@ function startGiveawayLoop(client) {
         endGiveaway(g.id, winner?.id ?? null);
 
         client.broadcast?.(g.guild_id, {
-          type:     'giveaway_end',
-          guildId:  String(g.guild_id),
-          prize:    g.prize,
-          winnerId: winner?.id ?? null,
-          message:  winner
-            ? `🎁 ${winner.username} ganó: ${g.prize}`
-            : `Sin participantes para: ${g.prize}`,
+          type: 'giveaway_end', guildId: String(g.guild_id),
+          prize: g.prize, winnerId: winner?.id ?? null,
+          message: winner ? `🎁 ${winner.username} ganó: ${g.prize}` : `Sin participantes para: ${g.prize}`,
           ts: Date.now(),
         });
 
@@ -68,27 +70,20 @@ function startGiveawayLoop(client) {
         const embed = new EmbedBuilder()
           .setColor(winner ? PALETTE.gold : PALETTE.muted)
           .setTitle('SORTEO FINALIZADO')
-          .setDescription(
-            winner
-              ? `🎉 ¡${winner} ganó **${g.prize}**!`
-              : `Sin participantes para **${g.prize}**.`
-          )
+          .setDescription(winner ? `🎉 ¡${winner} ganó **${g.prize}**!` : `Sin participantes para **${g.prize}**.`)
           .setFooter({ text: `${entries.length} participante${entries.length !== 1 ? 's' : ''}  ·  AURORE SYSTEM` })
           .setTimestamp();
 
         if (msg) await msg.edit({ embeds: [embed], components: [disabledRow] }).catch(() => {});
-        if (winner && channel) {
-          await channel.send({ content: `🎉 ¡Felicidades ${winner}! Ganaste **${g.prize}**.` }).catch(() => {});
-        }
+        if (winner && channel) await channel.send({ content: `🎉 ¡Felicidades ${winner}! Ganaste **${g.prize}**.` }).catch(() => {});
       } catch (err) {
         console.error('[GiveawayLoop]', err.message);
       }
     }
   };
-
   check();
   const id = setInterval(check, 15_000);
   return () => clearInterval(id);
 }
 
-module.exports = { startReminderLoop, startGiveawayLoop };
+module.exports = { startReminderLoop, startGiveawayLoop, startKeepAlive };
