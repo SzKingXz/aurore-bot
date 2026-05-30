@@ -4,6 +4,7 @@ services:
     runtime: node
     buildCommand: npm install
     startCommand: node bot.js
+    nodeVersion: 20.19.2
     envVars:
       - key: TOKEN
         sync: false
@@ -21,5 +22,4 @@ services:
         value: 10000
       - key: NODE_ENV
         value: production
-    healthCheckPath: /health
     autoDeploy: true
