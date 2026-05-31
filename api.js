@@ -31,24 +31,43 @@ function requireSession(req, res, next) {
   const m      = raw.match(/(?:^|;\s*)aurore_access=([^;]+)/);
   const token  = m ? decodeURIComponent(m[1]) : null;
   const bearer = req.headers['authorization']?.startsWith('Bearer ')
-    ? req.headers['authorization'].slice(7)
-    : null;
+    ? req.headers['authorization'].slice(7) : null;
   req._accessToken = bearer ?? token ?? null;
   if (!req._accessToken) return res.status(401).json({ error: 'Unauthorized' });
   next();
 }
 
-function requireAdmin(req, res, next) {
+const ADMIN_PERM   = BigInt(0x8);
+const MANAGE_GUILD = BigInt(0x20);
+
+async function requireAdmin(req, res, next) {
   if (req._bypassAuth) return next();
-  const raw = req.headers.cookie ?? '';
-  let guilds = [];
-  try { const m = raw.match(/(?:^|;\s*)aurore_guilds=([^;]+)/); if (m) guilds = JSON.parse(decodeURIComponent(m[1])); } catch {}
-  const guild = guilds.find(g => g.id === req.params.guildId);
-  if (!guild) return res.status(403).json({ error: 'Forbidden: not in this guild' });
-  const p = BigInt(guild.permissions ?? 0);
-  if ((p & 0x8n) === 0n && (p & 0x20n) === 0n) return res.status(403).json({ error: 'Forbidden: insufficient permissions' });
-  req._guild = guild;
-  next();
+  const { guildId } = req.params;
+  if (!req._accessToken) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const cacheKey = `discord:guilds:${req._accessToken.slice(-12)}`;
+    let guilds = cache.get(cacheKey);
+    if (!guilds) {
+      const r = await fetch('https://discord.com/api/users/@me/guilds', {
+        headers: { Authorization: `Bearer ${req._accessToken}` },
+      });
+      if (!r.ok) return res.status(401).json({ error: 'Invalid token' });
+      guilds = await r.json();
+      cache.set(cacheKey, guilds, 120_000);
+    }
+    const guild = guilds.find(g => g.id === guildId);
+    if (!guild) return res.status(403).json({ error: 'Not in guild' });
+    const p = BigInt(guild.permissions ?? 0);
+    if ((p & ADMIN_PERM) === 0n && (p & MANAGE_GUILD) === 0n && !guild.owner) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    req._guild = guild;
+    next();
+  } catch (err) {
+    console.error('[requireAdmin]', err.message);
+    res.status(500).json({ error: 'Auth check failed' });
+  }
 }
 
 function internalOrSession(req, res, next) {
@@ -73,9 +92,9 @@ function requireMod(client) {
     const guild = client?.guilds?.cache?.get(req.params.guildId);
     if (!guild) return requireAdmin(req, res, next);
     const member = await guild.members.fetch(userObj.id).catch(() => null);
-    if (!member) return res.status(403).json({ error: 'Forbidden: not a member' });
+    if (!member) return res.status(403).json({ error: 'Not a member' });
     const p = member.permissions.bitfield;
-    if ((p & (0x4n | 0x2n | 0x8n | 0x10000000n)) === 0n) return res.status(403).json({ error: 'Forbidden: requires mod permissions' });
+    if ((p & (0x4n | 0x2n | 0x8n | 0x10000000n)) === 0n) return res.status(403).json({ error: 'Requires mod permissions' });
     req._member = member;
     next();
   };
@@ -128,10 +147,10 @@ module.exports = function startAPI(client) {
 
   app.set('trust proxy', 1);
   app.use(cors({
-    origin:       (process.env.ALLOWED_ORIGINS?.split(',') ?? []).map(o => o.trim()),
-    methods:      ['GET', 'PATCH', 'POST'],
+    origin:         (process.env.ALLOWED_ORIGINS?.split(',') ?? []).map(o => o.trim()),
+    methods:        ['GET', 'PATCH', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-token'],
-    credentials:  true,
+    credentials:    true,
   }));
   app.use(express.json({ limit: '50kb' }));
   app.use(securityHeaders);
@@ -158,9 +177,9 @@ module.exports = function startAPI(client) {
     const limit  = sanitizeInt(req.query.limit,  { min: 1, max: 100, def: 10 });
     const offset = sanitizeInt(req.query.offset, { min: 0, max: 50000, def: 0 });
     const data   = await cached(`lb:global:${limit}:${offset}`, TTL.leaderboard, () => {
-      const db   = getDb();
-      const rows = db.prepare('SELECT user_id, guild_id, username, xp, level, messages FROM levels ORDER BY level DESC, xp DESC LIMIT ? OFFSET ?').all(limit, offset);
-      const total= db.prepare('SELECT COUNT(*) as c FROM levels').get()?.c ?? 0;
+      const db    = getDb();
+      const rows  = db.prepare('SELECT user_id, guild_id, username, xp, level, messages FROM levels ORDER BY level DESC, xp DESC LIMIT ? OFFSET ?').all(limit, offset);
+      const total = db.prepare('SELECT COUNT(*) as c FROM levels').get()?.c ?? 0;
       return { leaderboard: rows.map((r, i) => ({ rank: offset + i + 1, userId: r.user_id, username: r.username, level: r.level, xp: r.xp, messages: r.messages, xpForNext: 100 })), total, limit, offset };
     });
     res.json(data);
@@ -207,8 +226,7 @@ module.exports = function startAPI(client) {
     const sortMap  = { level: 'level DESC, xp DESC', xp: 'xp DESC', messages: 'messages DESC' };
     const sort     = sortMap[req.query.sort] ?? sortMap.level;
     const limit    = sanitizeInt(req.query.limit, { min: 1, max: 50, def: 30 });
-    const cacheKey = `guild:search:${guildId}:${q}:${minLevel}:${maxLevel}:${sort}:${limit}`;
-    const data     = await cached(cacheKey, 15_000, () => {
+    const data     = await cached(`guild:search:${guildId}:${q}:${minLevel}:${maxLevel}:${sort}:${limit}`, 15_000, () => {
       const db = getDb();
       const params = [guildId];
       let where = 'WHERE guild_id = ?';
@@ -249,15 +267,14 @@ module.exports = function startAPI(client) {
     const type   = sanitizeString(req.query.type ?? '', 20);
     const search = sanitizeString(req.query.search ?? '', 25);
     const VALID  = ['ban','kick','warn','timeout','mute','unmute','unban'];
-    if (type && !VALID.includes(type))         return res.status(400).json({ error: 'Invalid type' });
-    if (search && !isValidSnowflake(search))   return res.status(400).json({ error: 'Invalid search ID' });
-    const cacheKey = `guild:modlogs:${guildId}:${limit}:${offset}:${type}:${search}`;
-    const data = await cached(cacheKey, TTL.modLogs, () => {
+    if (type && !VALID.includes(type))       return res.status(400).json({ error: 'Invalid type' });
+    if (search && !isValidSnowflake(search)) return res.status(400).json({ error: 'Invalid search ID' });
+    const data = await cached(`guild:modlogs:${guildId}:${limit}:${offset}:${type}:${search}`, TTL.modLogs, () => {
       const db = getDb();
       const params = [guildId];
       let where = 'WHERE guild_id = ?';
-      if (type)   { where += ' AND type = ?';                                params.push(type); }
-      if (search) { where += ' AND (user_id = ? OR moderator_id = ?)';       params.push(search, search); }
+      if (type)   { where += ' AND type = ?';                          params.push(type); }
+      if (search) { where += ' AND (user_id = ? OR moderator_id = ?)'; params.push(search, search); }
       return {
         guildId,
         logs:      db.prepare(`SELECT * FROM mod_logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`).all(...params, limit, offset),
