@@ -1,5 +1,6 @@
 const { Events, ActivityType } = require('discord.js');
 const { startReminderLoop, startGiveawayLoop, startKeepAlive } = require('./loops');
+const startSocialLoop = require('../utils/social');
 
 module.exports = {
   name: Events.ClientReady,
@@ -13,5 +14,6 @@ module.exports = {
     startReminderLoop(client);
     startGiveawayLoop(client);
     startKeepAlive();
+    startSocialLoop(client);
   },
 };

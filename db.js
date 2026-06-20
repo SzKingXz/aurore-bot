@@ -93,14 +93,31 @@ try {
       last_used INTEGER,
       PRIMARY KEY (guild_id, command)
     );
+
+    CREATE TABLE IF NOT EXISTS social_monitors (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id     TEXT    NOT NULL,
+      channel_id   TEXT    NOT NULL,
+      platform     TEXT    NOT NULL,
+      creator_id   TEXT    NOT NULL,
+      creator_name TEXT    NOT NULL,
+      creator_url  TEXT,
+      last_post_id TEXT,
+      message      TEXT,
+      enabled      INTEGER DEFAULT 1,
+      created_at   INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_guild    ON social_monitors(guild_id);
+    CREATE INDEX IF NOT EXISTS idx_social_platform ON social_monitors(platform, enabled);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_social_uniq ON social_monitors(guild_id, platform, creator_id);
   `);
 
-  db.exec(`ALTER TABLE guild_config ADD COLUMN suggest_channel TEXT`).valueOf?.();
-} catch (err) {
-  if (!err.message?.includes('duplicate column')) {
-    console.error('[DB] Error:', err.message);
-    process.exit(1);
+  for (const col of ['suggest_channel']) {
+    try { db.exec(`ALTER TABLE guild_config ADD COLUMN ${col} TEXT`); } catch {}
   }
+} catch (err) {
+  console.error('[DB] Error:', err.message);
+  process.exit(1);
 }
 
 console.log('[DB] SQLite listo');
@@ -128,6 +145,12 @@ const stmts = {
   activeGiveaways: db.prepare('SELECT * FROM giveaways WHERE active = 1 AND ends_at <= ?'),
   getEntries:      db.prepare('SELECT * FROM giveaway_entries WHERE giveaway_id = ?'),
   endGiveaway:     db.prepare('UPDATE giveaways SET active = 0, winner_id = ? WHERE id = ?'),
+  getSocialMonitors:    db.prepare('SELECT * FROM social_monitors WHERE enabled = 1'),
+  getSocialByGuild:     db.prepare('SELECT * FROM social_monitors WHERE guild_id = ? ORDER BY created_at DESC'),
+  getSocialById:        db.prepare('SELECT * FROM social_monitors WHERE id = ?'),
+  updateLastPost:       db.prepare('UPDATE social_monitors SET last_post_id = ? WHERE id = ?'),
+  deleteSocialMonitor:  db.prepare('DELETE FROM social_monitors WHERE id = ? AND guild_id = ?'),
+  toggleSocialMonitor:  db.prepare('UPDATE social_monitors SET enabled = ? WHERE id = ? AND guild_id = ?'),
 };
 
 const ALLOWED_CONFIG = ['level_channel', 'log_channel', 'welcome_channel', 'suggest_channel'];
@@ -275,5 +298,39 @@ module.exports = {
         topLevel:      db.prepare('SELECT level FROM levels ORDER BY level DESC LIMIT 1').get()?.level ?? 0,
       };
     } catch { return { totalUsers: 0, totalMessages: 0, totalXP: 0, topLevel: 0 }; }
+  },
+
+  getSocialMonitors() {
+    try { return stmts.getSocialMonitors.all(); }
+    catch { return []; }
+  },
+
+  getSocialByGuild(guildId) {
+    try { return stmts.getSocialByGuild.all(guildId); }
+    catch { return []; }
+  },
+
+  addSocialMonitor(guildId, channelId, platform, creatorId, creatorName, creatorUrl, message) {
+    try {
+      const info = db.prepare(
+        'INSERT OR REPLACE INTO social_monitors (guild_id,channel_id,platform,creator_id,creator_name,creator_url,message,enabled) VALUES (?,?,?,?,?,?,?,1)'
+      ).run(guildId, channelId, platform, creatorId, creatorName, creatorUrl ?? null, message ?? null);
+      return db.prepare('SELECT * FROM social_monitors WHERE id = ?').get(info.lastInsertRowid);
+    } catch (err) { console.error('[db.addSocialMonitor]', err.message); return null; }
+  },
+
+  updateSocialLastPost(id, lastPostId) {
+    try { stmts.updateLastPost.run(lastPostId, id); }
+    catch {}
+  },
+
+  deleteSocialMonitor(id, guildId) {
+    try { return stmts.deleteSocialMonitor.run(id, guildId).changes > 0; }
+    catch { return false; }
+  },
+
+  toggleSocialMonitor(id, guildId, enabled) {
+    try { return stmts.toggleSocialMonitor.run(enabled ? 1 : 0, id, guildId).changes > 0; }
+    catch { return false; }
   },
 };

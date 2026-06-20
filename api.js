@@ -19,12 +19,6 @@ function wrap(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-function internalOnly(req, res, next) {
-  const t = req.headers['x-internal-token'];
-  if (!process.env.INTERNAL_TOKEN || t !== process.env.INTERNAL_TOKEN) return res.status(403).json({ error: 'Forbidden' });
-  next();
-}
-
 function requireSession(req, res, next) {
   if (req._bypassAuth) return next();
   const raw    = req.headers.cookie ?? '';
@@ -109,6 +103,8 @@ function broadcast(guildId, data) {
 }
 
 const CONFIGURABLE_FIELDS = ['level_channel', 'log_channel', 'welcome_channel', 'suggest_channel'];
+const VALID_PLATFORMS     = ['youtube', 'x', 'tiktok'];
+const PLATFORM_ENV_KEY    = { youtube: 'YOUTUBE_API_KEY', x: 'X_BEARER_TOKEN', tiktok: 'TIKTOK_ACCESS_TOKEN' };
 
 module.exports = function startAPI(client) {
   const app    = express();
@@ -148,7 +144,7 @@ module.exports = function startAPI(client) {
   app.set('trust proxy', 1);
   app.use(cors({
     origin:         (process.env.ALLOWED_ORIGINS?.split(',') ?? []).map(o => o.trim()),
-    methods:        ['GET', 'PATCH', 'POST'],
+    methods:        ['GET', 'PATCH', 'POST', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-token'],
     credentials:    true,
   }));
@@ -356,6 +352,58 @@ module.exports = function startAPI(client) {
     });
     if (!data) return res.status(404).json({ error: 'Guild not in cache' });
     res.json(data);
+  }));
+
+  guild.get('/social', internalOrSession, wrap(async (req, res) => {
+    const { guildId } = req.params;
+    const db   = getDb();
+    const rows = db.prepare('SELECT * FROM social_monitors WHERE guild_id = ? ORDER BY created_at DESC').all(guildId);
+    res.json({
+      monitors: rows.map(m => ({
+        id: m.id, platform: m.platform, creatorId: m.creator_id, creatorName: m.creator_name,
+        creatorUrl: m.creator_url, channelId: m.channel_id, message: m.message,
+        enabled: !!m.enabled, lastPostId: m.last_post_id, createdAt: m.created_at,
+        configured: !!process.env[PLATFORM_ENV_KEY[m.platform]],
+      })),
+    });
+  }));
+
+  guild.post('/social', limiters.config.middleware(), internalOrSession, sanitizeBody, wrap((req, res) => {
+    const { guildId } = req.params;
+    const { platform, creatorId, creatorName, creatorUrl, channelId, message } = req.body ?? {};
+
+    if (!VALID_PLATFORMS.includes(platform))      return res.status(400).json({ error: 'Invalid platform' });
+    if (!creatorId || !creatorName || !channelId) return res.status(400).json({ error: 'Missing required fields' });
+    if (!isValidSnowflake(channelId))             return res.status(400).json({ error: 'Invalid channelId' });
+
+    const db = getWrDb();
+    try {
+      const info = db.prepare(
+        'INSERT OR REPLACE INTO social_monitors (guild_id,channel_id,platform,creator_id,creator_name,creator_url,message,enabled) VALUES (?,?,?,?,?,?,?,1)'
+      ).run(guildId, channelId, platform, sanitizeString(creatorId, 100), sanitizeString(creatorName, 80), creatorUrl ?? null, message ?? null);
+      cache.del(`guild:social:${guildId}`);
+      res.json(db.prepare('SELECT * FROM social_monitors WHERE id = ?').get(info.lastInsertRowid));
+    } catch (err) {
+      console.error('[social.post]', err.message);
+      res.status(500).json({ error: 'Failed to save monitor' });
+    }
+  }));
+
+  guild.patch('/social/:monitorId', limiters.config.middleware(), internalOrSession, sanitizeBody, wrap((req, res) => {
+    const { guildId, monitorId } = req.params;
+    const { enabled } = req.body ?? {};
+    const db = getWrDb();
+    const changes = db.prepare('UPDATE social_monitors SET enabled = ? WHERE id = ? AND guild_id = ?').run(enabled ? 1 : 0, monitorId, guildId).changes;
+    if (!changes) return res.status(404).json({ error: 'Monitor not found' });
+    res.json({ ok: true });
+  }));
+
+  guild.delete('/social/:monitorId', limiters.config.middleware(), internalOrSession, wrap((req, res) => {
+    const { guildId, monitorId } = req.params;
+    const db = getWrDb();
+    const changes = db.prepare('DELETE FROM social_monitors WHERE id = ? AND guild_id = ?').run(monitorId, guildId).changes;
+    if (!changes) return res.status(404).json({ error: 'Monitor not found' });
+    res.json({ ok: true });
   }));
 
   app.use('/api/guild/:guildId', guild);
